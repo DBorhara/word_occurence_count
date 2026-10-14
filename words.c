@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <string.h>
+#include <dirent.h>
 
 #define BUFFSIZE 1024
 
@@ -33,7 +34,7 @@ int main(int argc, char const *argv[])
     {
         char const *path = argv[i];
 
-        // Declare stat
+        // Declare stat struct
         struct stat data;
 
         int r = stat(path, &data);
@@ -99,6 +100,20 @@ int main(int argc, char const *argv[])
         }
         else if (S_ISDIR(data.st_mode)) // directory
         {
+            DIR *dirp = opendir(path);
+            if (!dirp)
+            {
+                perror(path);
+                exit(EXIT_FAILURE);
+            }
+            struct dirent *de;
+
+            while (de = readdir(dirp))
+            {
+                //read file and add to count until no more NULL
+            }
+            
+
         }
         else
         {
@@ -107,7 +122,8 @@ int main(int argc, char const *argv[])
     }
 
     // Sorting by count goes here
-    //  Print Test
+    
+    // Print Test
     for (size_t i = 0; i < words_counter; i++)
     {
         printf("%s %d\n", words[i].word, words[i].count);
