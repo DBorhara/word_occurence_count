@@ -16,6 +16,8 @@ typedef struct
 
 char *add_char(char *word, size_t *word_len, char c);
 void add_word(WordCounter **words, size_t *words_counter, char *word);
+void read_file_dl(const char *path, WordCounter **words, size_t *words_counter);
+void recursive_dir_traverse(const char *path);
 
 int main(int argc, char const *argv[])
 {
@@ -48,55 +50,7 @@ int main(int argc, char const *argv[])
 
         if (S_ISREG(data.st_mode)) // regular file
         {
-            char buffer[BUFFSIZE];
-            ssize_t bytes;
-            int fd = open(path, O_RDONLY);
-            if (fd < 0)
-            {
-                perror("Open file error");
-                exit(EXIT_FAILURE);
-            }
-
-            char *word = NULL;
-            size_t word_length = 0;
-            // The Double Loop
-            while ((bytes = read(fd, buffer, BUFFSIZE)) > 0)
-            {
-                for (ssize_t j = 0; j < bytes; j++)
-                {
-                    char c = buffer[j];
-                    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
-                    {
-                        word = add_char(word, &word_length, c);
-                    }
-                    else
-                    {
-                        if (word_length == 0)
-                        {
-                            continue;
-                        }
-                        add_word(&words, &words_counter, word);
-                        free(word);
-                        word = NULL;
-                        word_length = 0;
-                    }
-                }
-            }
-            if (bytes < 0)
-            {
-                perror("read");
-                free(word);
-                close(fd);
-                exit(EXIT_FAILURE);
-            }
-            if (word_length > 0)
-            {
-                add_word(&words, &words_counter, word);
-                free(word);
-                word = NULL;
-                word_length = 0;
-            }
-            close(fd);
+            read_file_dl(path, &words, &words_counter);
         }
         else if (S_ISDIR(data.st_mode)) // directory
         {
@@ -108,12 +62,14 @@ int main(int argc, char const *argv[])
             }
             struct dirent *de;
 
-            while (de = readdir(dirp))
+            while ((de = readdir(dirp)) != NULL)
             {
-                //read file and add to count until no more NULL
-            }
-            
+                if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
+                {
+                    continue;
+                }
 
+            }
         }
         else
         {
@@ -122,7 +78,7 @@ int main(int argc, char const *argv[])
     }
 
     // Sorting by count goes here
-    
+
     // Print Test
     for (size_t i = 0; i < words_counter; i++)
     {
@@ -186,4 +142,78 @@ void add_word(WordCounter **words, size_t *words_counter, char *word)
     (*words)[*words_counter].count = 1;
 
     (*words_counter)++;
+}
+
+void read_file_dl(const char *base_path, WordCounter **words, size_t *words_counter)
+{
+    char buffer[BUFFSIZE];
+    ssize_t bytes;
+    int fd = open(path, O_RDONLY);
+    if (fd < 0)
+    {
+        perror("Open file error");
+        exit(EXIT_FAILURE);
+    }
+
+    char *word = NULL;
+    size_t word_length = 0;
+    // The Double Loop
+    while ((bytes = read(fd, buffer, BUFFSIZE)) > 0)
+    {
+        for (ssize_t j = 0; j < bytes; j++)
+        {
+            char c = buffer[j];
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
+            {
+                word = add_char(word, &word_length, c);
+            }
+            else
+            {
+                if (word_length == 0)
+                {
+                    continue;
+                }
+                add_word(words, words_counter, word);
+                free(word);
+                word = NULL;
+                word_length = 0;
+            }
+        }
+    }
+    if (bytes < 0)
+    {
+        perror("read");
+        free(word);
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+    if (word_length > 0)
+    {
+        add_word(words, words_counter, word);
+        free(word);
+        word = NULL;
+        word_length = 0;
+    }
+    close(fd);
+}
+
+void recursive_dir_traverse(const char *path)
+{
+    DIR *dirp = opendir(path);
+    if (!dirp)
+    {
+        perror(path);
+        exit(EXIT_FAILURE);
+    }
+    struct dirent *de;
+
+    while ((de = readdir(dirp)) != NULL)
+    {
+        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
+        {
+            continue;
+        }
+        if
+        
+    }
 }
