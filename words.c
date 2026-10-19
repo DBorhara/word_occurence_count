@@ -17,7 +17,8 @@ typedef struct
 char *add_char(char *word, size_t *word_len, char c);
 void add_word(WordCounter **words, size_t *words_counter, char *word);
 void read_file_dl(const char *path, WordCounter **words, size_t *words_counter);
-void recursive_dir_traverse(const char *path);
+void recursive_dir_traverse(const char *path, WordCounter **words, size_t *words_counter);
+int compare_words_alpha(const void *a, const void *b);
 
 int main(int argc, char const *argv[])
 {
@@ -54,31 +55,12 @@ int main(int argc, char const *argv[])
         }
         else if (S_ISDIR(data.st_mode)) // directory
         {
-            DIR *dirp = opendir(path);
-            if (!dirp)
-            {
-                perror(path);
-                exit(EXIT_FAILURE);
-            }
-            struct dirent *de;
-
-            while ((de = readdir(dirp)) != NULL)
-            {
-                if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
-                {
-                    continue;
-                }
-
-            }
-        }
-        else
-        {
-            // something else
+            recursive_dir_traverse(path, &words, &words_counter);
         }
     }
 
     // Sorting by count goes here
-
+    qsort(words, words_counter, sizeof(WordCounter), compare_words_alpha);
     // Print Test
     for (size_t i = 0; i < words_counter; i++)
     {
@@ -144,11 +126,14 @@ void add_word(WordCounter **words, size_t *words_counter, char *word)
     (*words_counter)++;
 }
 
-void read_file_dl(const char *base_path, WordCounter **words, size_t *words_counter)
+void read_file_dl(const char *base_path,
+                  WordCounter **words,
+                  size_t *words_counter)
 {
     char buffer[BUFFSIZE];
     ssize_t bytes;
-    int fd = open(path, O_RDONLY);
+
+    int fd = open(base_path, O_RDONLY);
     if (fd < 0)
     {
         perror("Open file error");
@@ -157,29 +142,82 @@ void read_file_dl(const char *base_path, WordCounter **words, size_t *words_coun
 
     char *word = NULL;
     size_t word_length = 0;
-    // The Double Loop
+
+    int pending_hyphen = 0;
+    int has_letter = 0;
+
     while ((bytes = read(fd, buffer, BUFFSIZE)) > 0)
     {
         for (ssize_t j = 0; j < bytes; j++)
         {
             char c = buffer[j];
-            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
+
+            int is_letter =
+                (c >= 'A' && c <= 'Z') ||
+                (c >= 'a' && c <= 'z');
+
+            // Step 1: Resolve a previous hyphen
+            if (pending_hyphen)
+            {
+                if (is_letter)
+                {
+                    word = add_char(word, &word_length, '-');
+                }
+                else
+                {
+                    if (has_letter)
+                    {
+                        add_word(words, words_counter, word);
+                    }
+
+                    free(word);
+                    word = NULL;
+                    word_length = 0;
+                    has_letter = 0;
+                }
+
+                pending_hyphen = 0;
+            }
+
+            // Step 2: Process a letter
+            if (is_letter)
+            {
+                word = add_char(word, &word_length, c);
+                has_letter = 1;
+            }
+
+            // Step 3: Process an apostrophe
+            else if (c == '\'')
             {
                 word = add_char(word, &word_length, c);
             }
+
+            // Step 4: Process a hyphen
+            else if (c == '-' && word_length > 0 &&
+                     ((word[word_length - 1] >= 'A' &&
+                       word[word_length - 1] <= 'Z') ||
+                      (word[word_length - 1] >= 'a' &&
+                       word[word_length - 1] <= 'z')))
+            {
+                pending_hyphen = 1;
+            }
+
+            // Step 5: Process a separator
             else
             {
-                if (word_length == 0)
+                if (has_letter)
                 {
-                    continue;
+                    add_word(words, words_counter, word);
                 }
-                add_word(words, words_counter, word);
+
                 free(word);
                 word = NULL;
                 word_length = 0;
+                has_letter = 0;
             }
         }
     }
+
     if (bytes < 0)
     {
         perror("read");
@@ -187,17 +225,18 @@ void read_file_dl(const char *base_path, WordCounter **words, size_t *words_coun
         close(fd);
         exit(EXIT_FAILURE);
     }
-    if (word_length > 0)
+
+    // Process the last word
+    if (has_letter)
     {
         add_word(words, words_counter, word);
-        free(word);
-        word = NULL;
-        word_length = 0;
     }
+
+    free(word);
     close(fd);
 }
 
-void recursive_dir_traverse(const char *path)
+void recursive_dir_traverse(const char *path, WordCounter **words, size_t *words_counter)
 {
     DIR *dirp = opendir(path);
     if (!dirp)
@@ -213,7 +252,42 @@ void recursive_dir_traverse(const char *path)
         {
             continue;
         }
-        if
-        
+        size_t full_path_len = strlen(path) + strlen(de->d_name) + 2;
+        char *full_path = malloc(full_path_len);
+        if (full_path == NULL)
+        {
+            perror("malloc");
+            exit(EXIT_FAILURE);
+        }
+
+        snprintf(full_path, full_path_len, "%s/%s", path, de->d_name);
+
+        struct stat data;
+
+        if (lstat(full_path, &data) < 0)
+        {
+            perror("full path");
+            free(full_path);
+            exit(EXIT_FAILURE);
+        }
+
+        if (S_ISREG(data.st_mode))
+        {
+            read_file_dl(full_path, words, words_counter);
+        }
+        else if (S_ISDIR(data.st_mode))
+        {
+            recursive_dir_traverse(full_path, words, words_counter);
+        }
+        free(full_path);
     }
+    closedir(dirp);
+}
+
+int compare_words_alpha(const void *a, const void *b)
+{
+    const WordCounter *w1 = a;
+    const WordCounter *w2 = b;
+
+    return strcmp(w1->word, w2->word);
 }
