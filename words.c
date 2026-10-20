@@ -17,7 +17,9 @@ typedef struct
 char *add_char(char *word, size_t *word_len, char c);
 void add_word(WordCounter **words, size_t *words_counter, char *word);
 void read_file_dl(const char *path, WordCounter **words, size_t *words_counter);
-void recursive_dir_traverse(const char *path, WordCounter **words, size_t *words_counter);
+void recursive_dir_traverse(const char *path, WordCounter **words,
+                            size_t *words_counter, const char *suffix);
+int has_suffix(const char *fname, const char *suffix);
 int compare_words_alpha(const void *a, const void *b);
 
 int main(int argc, char *argv[])
@@ -31,14 +33,49 @@ int main(int argc, char *argv[])
 
     WordCounter *words = NULL;
     size_t words_counter = 0;
+    const char *ft_suffix = ".txt";
+
+    // Suffix Check
+    for (int i = 1; i < argc; i++)
+    {
+        if (strcmp(argv[i], "-s") == 0) // words -s .md doc
+        {
+            if (i + 1 >= argc || argv[i + 1][0] == '\0') // No suffix args ex: .txt, .md
+            {
+                fprintf(stderr, "Missing -s flag argument(s)\n");
+                return EXIT_FAILURE;
+            }
+
+            ft_suffix = argv[++i];
+        }
+        else if (strncmp(argv[i], "-s", 2) == 0) // words -s.md doc
+        {
+            ft_suffix = argv[i] + 2;
+        }
+    }
+
+    int arg_count = 0;
 
     // Master argv loop
     for (int i = 1; i < argc; i++)
     {
+        // Skip suffix args
+        if (strcmp(argv[i], "-s") == 0) // words -s.md doc
+        {
+            i++;
+            continue;
+        }
+
+        if (strncmp(argv[i], "-s", 2) == 0) // words -s .md doc
+        {
+            continue;
+        }
+
         char const *path = argv[i];
 
         // Declare stat struct
         struct stat data;
+        arg_count++;
 
         int r = stat(path, &data);
         if (r < 0)
@@ -47,16 +84,22 @@ int main(int argc, char *argv[])
             exit(EXIT_FAILURE);
         }
 
-        // Check file file
+        // Check file
 
-        if (S_ISREG(data.st_mode)) // regular file
+        if (S_ISREG(data.st_mode)) // regular file read
         {
             read_file_dl(path, &words, &words_counter);
         }
-        else if (S_ISDIR(data.st_mode)) // directory
+        else if (S_ISDIR(data.st_mode)) // directory traversal with suffix
         {
-            recursive_dir_traverse(path, &words, &words_counter);
+            recursive_dir_traverse(path, &words, &words_counter, ft_suffix);
         }
+    }
+
+    if (arg_count == 0)
+    {
+        fprintf(stderr, "No file or directory provided\n");
+        exit(EXIT_FAILURE);
     }
 
     // Sorting by count goes here
@@ -65,8 +108,11 @@ int main(int argc, char *argv[])
     for (size_t i = 0; i < words_counter; i++)
     {
         printf("%s %d\n", words[i].word, words[i].count);
+        free(words[i].word);
     }
-    return 0;
+
+    free(words);
+    return EXIT_SUCCESS;
 }
 
 char *add_char(char *word, size_t *word_len, char c)
@@ -156,7 +202,7 @@ void read_file_dl(const char *base_path,
                 (c >= 'A' && c <= 'Z') ||
                 (c >= 'a' && c <= 'z');
 
-            // Step 1: Resolve a previous hyphen
+            // Previous hyphen foo-bar vs foo--bar
             if (pending_hyphen)
             {
                 if (is_letter)
@@ -179,20 +225,20 @@ void read_file_dl(const char *base_path,
                 pending_hyphen = 0;
             }
 
-            // Step 2: Process a letter
+            // Valid ASCII letter
             if (is_letter)
             {
                 word = add_char(word, &word_length, c);
                 has_letter = 1;
             }
 
-            // Step 3: Process an apostrophe
+            // Apostrophe case ex: `oo
             else if (c == '\'')
             {
                 word = add_char(word, &word_length, c);
             }
 
-            // Step 4: Process a hyphen
+            // When we see a hyphen for the first time
             else if (c == '-' && word_length > 0 &&
                      ((word[word_length - 1] >= 'A' &&
                        word[word_length - 1] <= 'Z') ||
@@ -202,7 +248,7 @@ void read_file_dl(const char *base_path,
                 pending_hyphen = 1;
             }
 
-            // Step 5: Process a separator
+            // Anything else adds the word ex: a2z -> a is added
             else
             {
                 if (has_letter)
@@ -236,7 +282,7 @@ void read_file_dl(const char *base_path,
     close(fd);
 }
 
-void recursive_dir_traverse(const char *path, WordCounter **words, size_t *words_counter)
+void recursive_dir_traverse(const char *path, WordCounter **words, size_t *words_counter, const char *suffix)
 {
     DIR *dirp = opendir(path);
     if (!dirp)
@@ -248,10 +294,11 @@ void recursive_dir_traverse(const char *path, WordCounter **words, size_t *words
 
     while ((de = readdir(dirp)) != NULL)
     {
-        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
+        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0 || de->d_name[0] == '.')
         {
             continue;
         }
+
         size_t full_path_len = strlen(path) + strlen(de->d_name) + 2;
         char *full_path = malloc(full_path_len);
         if (full_path == NULL)
@@ -264,24 +311,41 @@ void recursive_dir_traverse(const char *path, WordCounter **words, size_t *words
 
         struct stat data;
 
+        // lstat for preventing infinite looping
         if (lstat(full_path, &data) < 0)
         {
-            perror("full path");
+            perror(full_path);
             free(full_path);
             exit(EXIT_FAILURE);
         }
 
-        if (S_ISREG(data.st_mode))
+        if (S_ISREG(data.st_mode) && has_suffix(de->d_name, suffix)) // Is a file and has a suffix
         {
             read_file_dl(full_path, words, words_counter);
         }
-        else if (S_ISDIR(data.st_mode))
+        else if (S_ISDIR(data.st_mode)) // Is a folder, we pass the suffix down
         {
-            recursive_dir_traverse(full_path, words, words_counter);
+            recursive_dir_traverse(full_path, words, words_counter, suffix);
         }
         free(full_path);
     }
     closedir(dirp);
+}
+
+int has_suffix(const char *fname, const char *suffix)
+{
+    size_t fname_len = strlen(fname);
+    size_t suffix_len = strlen(suffix);
+
+    if (fname_len < suffix_len)
+    {
+        return 0;
+    }
+
+    const char *end_of_fname = &fname[fname_len];         // test.txt -> test.txt<pointer>\0
+    const char *suffix_start = end_of_fname - suffix_len; // test.txt<pointer> -> test<pointer>.txt
+
+    return (strcmp(suffix_start, suffix) == 0);
 }
 
 int compare_words_alpha(const void *a, const void *b)
@@ -289,10 +353,12 @@ int compare_words_alpha(const void *a, const void *b)
     const WordCounter *w1 = a;
     const WordCounter *w2 = b;
 
-    int result = strcasecmp(w1->word, w2->word);
-    if (result != 0)
+    // Sort by decreasing count
+    if (w1->count != w2->count)
     {
-        return result;
+        return w2->count - w1->count;
     }
+
+    // Sort lexicographically when counts are equal
     return strcmp(w1->word, w2->word);
 }
