@@ -20,7 +20,7 @@ void read_file_dl(const char *path, WordCounter **words, size_t *words_counter);
 void recursive_dir_traverse(const char *path, WordCounter **words, size_t *words_counter);
 int compare_words_alpha(const void *a, const void *b);
 
-int main(int argc, char const *argv[])
+int main(int argc, char *argv[])
 {
     if (argc < 2)
     {
@@ -289,5 +289,10 @@ int compare_words_alpha(const void *a, const void *b)
     const WordCounter *w1 = a;
     const WordCounter *w2 = b;
 
+    int result = strcasecmp(w1->word, w2->word);
+    if (result != 0)
+    {
+        return result;
+    }
     return strcmp(w1->word, w2->word);
 }
