@@ -107,8 +107,13 @@ int main(int argc, char *argv[])
     // Print Test
     for (size_t i = 0; i < words_counter; i++)
     {
-        printf("%s %d\n", words[i].word, words[i].count);
-        free(words[i].word);
+        // write the word to std output
+        write(STDOUT_FILENO, words[i].word, strlen(words[i].word));
+        // Get count as text insteaf of int
+        char count_buff[32];
+        int count_len = snprintf(count_buff, sizeof(count_buff), " %d\n", words[i].count);
+
+        write(STDOUT_FILENO, count_buff, count_len);
     }
 
     free(words);
